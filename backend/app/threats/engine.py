@@ -9,7 +9,7 @@ Decision logic:
 All decisions are deterministic and rule-based — no AI / ML / neural networks.
 """
 import time
-from typing import Dict, Any, List, Set
+from typing import Dict, Any, List
 
 from app.quantum import calculate_sequence_fidelity, calculate_qber
 from app.qds.encoder import SignatureStateEncoder
@@ -58,8 +58,10 @@ class ThreatDecisionEngine:
     """
 
     def __init__(self) -> None:
-        # In-memory nonce registry — prevents replay attacks within this engine instance
-        self._nonce_cache: Set[str] = set()
+        # In-memory nonce registry: maps nonce → session_id that first registered it.
+        # This allows re-verification of the *same* session while still blocking
+        # a different session from reusing an already-seen nonce (true replay attack).
+        self._nonce_cache: Dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -89,7 +91,11 @@ class ThreatDecisionEngine:
         threat_type = "NONE"
 
         # ── 1. Anti-Replay: Nonce Cache Check ──────────────────────────────
-        nonce_reused = session.nonce in self._nonce_cache
+        existing_owner = self._nonce_cache.get(session.nonce)
+        nonce_reused = (
+            existing_owner is not None
+            and existing_owner != session.session_id
+        )
         if nonce_reused:
             alerts.append({
                 "code": "REPLAY_NONCE_REUSE",
@@ -101,8 +107,9 @@ class ThreatDecisionEngine:
             })
             threat_type = "REPLAY_ATTACK"
 
-        # Register nonce for future evaluations
-        self._nonce_cache.add(session.nonce)
+        # Register nonce → session_id (first registration wins)
+        if existing_owner is None:
+            self._nonce_cache[session.nonce] = session.session_id
 
         # ── 2. Timestamp Freshness ─────────────────────────────────────────
         current_time_sec = time.time()
