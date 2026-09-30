@@ -53,7 +53,6 @@ apiClient.interceptors.request.use(
   },
   (error) => Promise.reject(error)
 );
-
 // Response Interceptor: Catch 401 Unauthorized
 apiClient.interceptors.response.use(
   (response) => response,
